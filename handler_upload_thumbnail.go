@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"os"
 	"strings"
@@ -84,11 +86,24 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	mediaType, _, err := mime.ParseMediaType(contentType)
+
+	if err != nil {
+		respondWithError(w, 500, "failed to parse mediatype", err)
+		return
+	}
+
+	if mediaType != "image/png" && mediaType != "image/jped" {
+		respondWithError(w, 500, "unsupported media type", errors.New("unsupported media type"))
+		return
+	}
+
 	bytesReader := bytes.NewReader(fileBytes)
 	written, err := io.Copy(diskFile, bytesReader)
 
 	if err != nil || written == 0 {
 		respondWithError(w, 500, "failed to save file", err)
+		return
 	}
 
 
