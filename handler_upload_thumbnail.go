@@ -99,7 +99,7 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if mediaType != "image/png" && mediaType != "image/jped" {
+	if mediaType != "image/png" && mediaType != "image/jpeg" {
 		respondWithError(w, 500, "unsupported media type", errors.New("unsupported media type"))
 		return
 	}
