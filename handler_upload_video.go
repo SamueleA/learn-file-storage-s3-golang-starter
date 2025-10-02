@@ -3,11 +3,13 @@ package main
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"mime"
 	"net/http"
 	"os"
+	"os/exec"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
@@ -97,6 +99,24 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	randomName := hex.EncodeToString(randomBytes)
 	fileName := randomName + ".mp4"
 
+	aspectRatio, err := getVideoAspectRatio(tmpFile.Name())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "failed to get video aspect ratio", err)
+		return
+	}
+
+  var pathPrefix string
+
+  if aspectRatio == "16:9" {
+		pathPrefix = "landscape"
+	} else if aspectRatio == "9:16" {
+		pathPrefix = "portrait"
+	} else {
+		pathPrefix = "other"
+	}
+
+	fileName = fmt.Sprintf("%s/%s", pathPrefix, fileName)
+
 	_, err = cfg.s3Client.PutObject(r.Context(), &s3.PutObjectInput{
 		Bucket: &cfg.s3Bucket,
 		Key: &fileName,
@@ -118,5 +138,35 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "failed to update video", err)
 		return
+	}
+}
+
+func getVideoAspectRatio(filePath string) (string, error) {
+	ffprobeCmd := exec.Command("ffprobe", "-v", "error", "-print_format", "json", "-show_streams", filePath)
+	output, err := ffprobeCmd.Output()
+
+	if err != nil {
+		return "", err
+	}
+	
+	var result map[string]interface{}
+	err = json.Unmarshal(output, &result)
+	if err != nil {
+		return "", err
+	}
+
+	stream := result["streams"].([]interface{})[0].(map[string]interface{})
+	width := stream["width"].(float64)
+	height := stream["height"].(float64)
+
+	aspectRatio :=  uint64(width /	 height)
+
+	switch aspectRatio {
+	case uint64(16/9):
+		return "16:9", nil
+	case 9/16:
+		return "9:16", nil
+	default:
+		return "other", nil
 	}
 }
