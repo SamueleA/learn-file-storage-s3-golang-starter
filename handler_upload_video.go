@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -117,10 +118,26 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 
 	fileName = fmt.Sprintf("%s/%s", pathPrefix, fileName)
 
+	outputFilePath, err := procesVideoForFastStart(tmpFile.Name())
+	
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "failed to process video", err)
+		return 
+	}
+
+	outputFile, err := os.ReadFile(outputFilePath)
+
+	defer os.Remove(outputFilePath)
+
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError,  "failed to read output file", err)
+		return
+	}
+
 	_, err = cfg.s3Client.PutObject(r.Context(), &s3.PutObjectInput{
 		Bucket: &cfg.s3Bucket,
 		Key: &fileName,
-		Body: tmpFile,
+		Body: bytes.NewReader(outputFile),
 		ContentType: &mediaType,
 	})
 
@@ -169,4 +186,18 @@ func getVideoAspectRatio(filePath string) (string, error) {
 	default:
 		return "other", nil
 	}
+}
+
+func procesVideoForFastStart (filePath string) (string, error) {
+	outputFilePath := fmt.Sprintf("%s.processing", filePath)
+
+	processVideoCommand := exec.Command("ffmpeg", "-i", filePath, "-c", "copy", "-movflags", "faststart", "-f", "mp4", outputFilePath)
+	
+	err := processVideoCommand.Run()
+
+	if err != nil {
+		return "", fmt.Errorf("Error while process video: %w")
+	}
+
+	return outputFilePath, nil
 }
